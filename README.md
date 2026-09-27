@@ -1,24 +1,69 @@
-# ArpAttack 自动化云端构建项目
+# ArpAttack - 局域网安全与分析测试工具
 
-该项目已配置好 GitHub Actions，可以自动在云端构建适配 Windows 7 的 `.exe` 文件。
+本项目基于 Python 与 Scapy 开发，提供局域网设备扫描发现、厂商识别、自定义备注以及 ARP 协议安全测试等功能，包含命令行脚本与异步图形界面（GUI）。
 
-## 如何获取构建后的 .exe 文件？
+---
 
-1.  **在 GitHub 上创建一个新仓库** (例如命名为 `ArpAttack_Tool`)。
-2.  **将此文件夹推送到该仓库**：
-    ```bash
-    git remote add origin https://github.com/你的用户名/你的仓库名.git
-    git branch -M main
-    git push -u origin main
-    ```
-3.  **等待构建**：
-    - 前往 GitHub 仓库页面，点击顶部的 **"Actions"** 标签。
-    - 你会看到一个正在运行的工作流 "Build ArpAttack for Windows 7"。
-    - 等待它显示绿色的勾（大约需要 2-4 分钟）。
-4.  **下载文件**：
-    - 点击该完成的工作流。
-    - 在页面底部的 **"Artifacts"** 栏目下，点击 `ArpAttack_Windows_Executable` 即可下载。
+## ⚠️ 权限要求与重要运行说明
 
-## 注意事项
-- 构建环境使用的是 **Python 3.8**，确保了对 Windows 7 的原生支持。
-- 运行时仍需在目标机器上安装 **Npcap** 驱动。
+由于 ARP 协议工作在网络数据链路层（OSI 第二层），程序需要通过操作系统的原始套接字（Raw Socket / BPF）发送与捕获数据包，**因此必须以管理员 / Root 权限运行**：
+
+### 1. macOS / Linux
+必须使用 `sudo` 运行：
+```bash
+sudo python3 gui_arp.py
+# 或运行命令行版本：
+sudo python3 arp.py
+```
+> **注意**：
+> - 如果在 macOS 上使用代理软件（如开启了 Clash / Surge 的 TUN 虚拟网卡模式），启动 GUI 后请确认**网卡**下拉框中选中的是你的物理网卡（如 **`en0`** Wi-Fi），网关一般为 `192.168.1.1` 或你的路由器 IP。
+
+### 2. Windows
+必须**以管理员身份运行**：
+- **运行 Python 脚本**：以管理员身份打开 CMD 或 PowerShell，然后执行：
+  ```cmd
+  python gui_arp.py
+  ```
+- **运行编译后的 .exe 文件**：程序已内置 `--uac-admin` 清单，若仍受限请**右键点击该 `.exe` 文件，选择“以管理员身份运行”**。
+- **环境依赖**：Windows 下运行 Scapy 必须安装 **[Npcap](https://npcap.com/)**（安装时请勾选 *"Install Npcap in WinPcap API-compatible Mode"*）。
+
+---
+
+## ✨ 核心特性
+
+1. **智能设备扫描（多级容错）**：
+   - 优先通过 Nmap 快速异步并发探测；
+   - 自动联动系统底层内核 ARP 缓存表，即使在权限受限环境下也能高精度提取 IP 与 MAC。
+2. **本土化与最新 OUI 厂商识别**：
+   - 内置覆盖国内主流硬件设备的增强 OUI 字典。
+   - 针对智能电视与上游供应链进行特别优化（例如自动识别创维/酷开电视常用的高盛达 GSD Wi-Fi 模组、暴风/海信电视常用的必联电子模组、华为光猫/路由、小米生态设备等）。
+3. **随机 MAC（私有地址）自动检测**：
+   - 自动识别 iOS / Android / Windows 开启了“随机 MAC / 私有无线局域网地址”的移动终端。
+4. **主动 Web 特征探测**：
+   - 异步探测常见端口（80/8080）的 HTTP 页面标题，直观展示如 `[中国电信智能网关]`、`[小米路由器]` 等。
+5. **设备自定义备注（持久化保存）**：
+   - 列表包含“自定义备注”列。
+   - 双击设备行或点击“✏️ 修改备注”按钮即可快捷输入备注名称（如“客厅创维电视”、“我的iPhone”）。
+   - 备注将保存在本地 `device_notes.json` 文件中，下次重新扫描或重启程序自动加载。
+6. **异步非阻塞 GUI**：
+   - 基于 `asyncio` 后台事件循环，扫描与攻击测试期间界面流畅不卡死。
+
+---
+
+## 🛠️ 云端自动化构建 (.exe)
+
+项目已配置 GitHub Actions 自动化工作流，可在推送代码至仓库后自动在 Windows 虚拟机中打包生成适用于 Windows 7 / 10 / 11 的独立免安装可执行程序：
+
+1. **推送代码至 GitHub 仓库**：
+   ```bash
+   git push origin main
+   ```
+2. **下载构建产物**：
+   - 访问 GitHub 仓库页面的 **"Actions"** 标签。
+   - 点击最新的构建工作流，在 **"Artifacts"** 栏目下即可下载 `ArpAttack_Windows_Executable`。
+
+---
+
+## 声明
+
+> **本项目仅供计算机网络协议学习、局域网管理与合法授权的安全测试使用。严禁用于任何未经授权的未授权网络入侵或破坏活动。**
